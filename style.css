@@ -197,38 +197,6 @@ main {
     box-shadow: 0 0 0 2px rgba(13, 110, 253, 0.2);
 }
 
-.price-option {
-    border: 2px solid var(--border-color);
-    border-radius: var(--border-radius);
-    padding: 1.25rem;
-    text-align: center;
-    transition: var(--transition);
-    cursor: pointer;
-    background: var(--card-bg);
-}
-
-.price-option:hover {
-    border-color: var(--primary-color);
-    transform: translateY(-2px);
-}
-
-.price-option.selected {
-    border-color: var(--success-color);
-    background: rgba(25, 135, 84, 0.05);
-}
-
-.price-option .price {
-    font-size: 1.75rem;
-    font-weight: 700;
-    color: var(--success-color);
-    margin: 0.5rem 0;
-}
-
-.price-option .profit {
-    font-size: 0.875rem;
-    color: var(--text-muted);
-}
-
 .btn {
     border-radius: 8px;
     padding: 0.5rem 1.25rem;
@@ -254,7 +222,7 @@ main {
 .form-select {
     border-radius: 8px;
     border: 1px solid var(--border-color);
-    padding: 0.75rem 1.8rem;
+    padding: 0.75rem 1rem;
     background-color: var(--card-bg);
     color: var(--text-color);
     transition: var(--transition);
@@ -294,11 +262,6 @@ main {
     .navbar .d-flex {
         flex-wrap: wrap;
         gap: 0.5rem;
-    }
-    
-    .navbar .form-select {
-        width: auto;
-        flex-grow: 1;
     }
 }
 

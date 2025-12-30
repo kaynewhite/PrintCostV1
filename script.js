@@ -1,20 +1,8 @@
 class PrintCalculator {
     constructor() {
         this.state = {
-            currency: 'PHP',
-            currencySymbol: '₱',
             products: JSON.parse(localStorage.getItem('printProducts')) || [],
-            selectedProduct: null,
-            selectedPrice: null,
-            currentCalculation: null
-        };
-        
-        this.currencyData = {
-            'PHP': { symbol: '₱', name: 'Philippine Peso', rate: 1 },
-            'USD': { symbol: '$', name: 'US Dollar', rate: 0.018 },
-            'EUR': { symbol: '€', name: 'Euro', rate: 0.016 },
-            'GBP': { symbol: '£', name: 'British Pound', rate: 0.014 },
-            'JPY': { symbol: '¥', name: 'Japanese Yen', rate: 2.6 }
+            selectedProduct: null
         };
         
         this.init();
@@ -23,7 +11,6 @@ class PrintCalculator {
     init() {
         this.loadTheme();
         this.initEventListeners();
-        this.updateCurrencySymbols();
         this.renderProducts();
         this.updateDashboard();
     }
@@ -41,21 +28,15 @@ class PrintCalculator {
 
     initEventListeners() {
         document.getElementById('darkModeToggle').addEventListener('click', () => this.toggleDarkMode());
-        
-        document.getElementById('currencySelect').addEventListener('change', (e) => this.changeCurrency(e.target.value));
-        
         document.getElementById('newProductBtn').addEventListener('click', () => this.showProductModal());
         document.getElementById('createFirstBtn').addEventListener('click', () => this.showProductModal());
-        
         document.getElementById('sortNewest').addEventListener('click', () => this.sortProducts('newest'));
         document.getElementById('sortProfit').addEventListener('click', () => this.sortProducts('profit'));
-        
-        document.getElementById('printingCost').addEventListener('input', () => this.calculatePrices());
-        document.getElementById('laborCost').addEventListener('input', () => this.calculatePrices());
-        document.getElementById('markupPercentage').addEventListener('input', () => this.calculatePrices());
-        
+        document.getElementById('printingCost').addEventListener('input', () => this.calculateAndShowPreview());
+        document.getElementById('laborCost').addEventListener('input', () => this.calculateAndShowPreview());
+        document.getElementById('markupPercentage').addEventListener('input', () => this.calculateAndShowPreview());
+        document.getElementById('productName').addEventListener('input', () => this.updateSaveButton());
         document.getElementById('addMaterialBtn').addEventListener('click', () => this.addMaterialRow());
-        document.getElementById('calculateBtn').addEventListener('click', () => this.calculatePrices(true));
         document.getElementById('saveProductBtn').addEventListener('click', () => this.saveProduct());
         
         document.querySelectorAll('.color-option').forEach(option => {
@@ -70,7 +51,7 @@ class PrintCalculator {
                 const container = document.getElementById('materialsContainer');
                 if (container.children.length > 1) {
                     e.target.closest('.material-item').remove();
-                    this.calculatePrices();
+                    this.calculateAndShowPreview();
                 }
             }
         });
@@ -82,7 +63,7 @@ class PrintCalculator {
                 const row = e.target.closest('.material-item');
                 if (row) {
                     this.updateMaterialCost(row);
-                    this.calculatePrices();
+                    this.calculateAndShowPreview();
                 }
             }
         });
@@ -115,39 +96,27 @@ class PrintCalculator {
         localStorage.setItem('printTheme', newTheme);
     }
 
-    changeCurrency(currency) {
-        this.state.currency = currency;
-        this.state.currencySymbol = this.currencyData[currency].symbol;
-        this.updateCurrencySymbols();
-        this.renderProducts();
-        this.updateDashboard();
-    }
-
-    updateCurrencySymbols() {
-        document.querySelectorAll('.currency-symbol').forEach(el => {
-            el.textContent = this.state.currencySymbol;
-        });
-    }
-
     showProductModal(product = null) {
         const modal = new bootstrap.Modal(document.getElementById('productModal'));
         const title = document.getElementById('modalTitle');
         const saveBtn = document.getElementById('saveProductBtn');
-        const calculateBtn = document.getElementById('calculateBtn');
         
         if (product) {
             title.textContent = 'Edit Product';
             this.loadProductToForm(product);
-            saveBtn.classList.remove('d-none');
-            calculateBtn.classList.add('d-none');
+            saveBtn.textContent = 'Update Product';
         } else {
             title.textContent = 'New Product Calculation';
             this.resetProductForm();
-            saveBtn.classList.add('d-none');
-            calculateBtn.classList.remove('d-none');
+            saveBtn.textContent = 'Save Product';
         }
         
         modal.show();
+        
+        setTimeout(() => {
+            this.calculateAndShowPreview();
+            this.updateSaveButton();
+        }, 100);
     }
 
     resetProductForm() {
@@ -163,17 +132,15 @@ class PrintCalculator {
         document.querySelector('.color-option[data-color="#0d6efd"]').classList.add('active');
         
         document.getElementById('printingCost').value = '5';
-        document.getElementById('laborCost').value = '20';
-        document.getElementById('markupPercentage').value = '30';
+        document.getElementById('laborCost').value = '25';
+        document.getElementById('markupPercentage').value = '40';
         
         const row = this.addMaterialRow();
-        row.querySelector('.material-name').value = 'Sample Material';
-        row.querySelector('.material-cost').value = '100';
-        row.querySelector('.material-items').value = '50';
+        row.querySelector('.material-name').value = 'Glossy Paper (A4)';
+        row.querySelector('.material-cost').value = '250';
+        row.querySelector('.material-items').value = '100';
+        row.querySelector('.material-unit').value = 'ream';
         this.updateMaterialCost(row);
-        
-        this.state.currentCalculation = null;
-        this.state.selectedPrice = null;
     }
 
     loadProductToForm(product) {
@@ -201,8 +168,6 @@ class PrintCalculator {
             row.querySelector('.material-items').value = material.itemsProduced;
             this.updateMaterialCost(row);
         });
-        
-        setTimeout(() => this.calculatePrices(true), 100);
     }
 
     addMaterialRow() {
@@ -213,8 +178,6 @@ class PrintCalculator {
         container.appendChild(clone);
         
         const newRow = container.lastElementChild;
-        newRow.querySelector('.currency-symbol').textContent = this.state.currencySymbol;
-        
         return newRow;
     }
 
@@ -223,8 +186,7 @@ class PrintCalculator {
         const items = parseInt(row.querySelector('.material-items').value) || 1;
         
         const costPerItem = cost / items;
-        row.querySelector('.material-cost-per-item').textContent = 
-            `${this.state.currencySymbol}${costPerItem.toFixed(2)}`;
+        row.querySelector('.material-cost-per-item').textContent = `₱${costPerItem.toFixed(2)}`;
     }
 
     getMaterialsData() {
@@ -248,102 +210,134 @@ class PrintCalculator {
         return materials;
     }
 
-    calculatePrices(showToast = false) {
+    calculateAndShowPreview() {
         const materials = this.getMaterialsData();
         const printingCost = parseFloat(document.getElementById('printingCost').value) || 0;
         const laborCost = parseFloat(document.getElementById('laborCost').value) || 0;
-        const markupPercentage = parseFloat(document.getElementById('markupPercentage').value) || 30;
+        const markupPercentage = parseFloat(document.getElementById('markupPercentage').value) || 40;
         
         if (materials.length === 0) {
-            if (showToast) this.showToast('Please add at least one material', 'warning');
+            document.getElementById('previewSection').classList.add('d-none');
             return;
         }
         
         let totalMaterialCostPerItem = 0;
-        let materialDetails = [];
+        let totalWastePercentage = 0;
         
         materials.forEach(material => {
             totalMaterialCostPerItem += material.costPerItem;
-            materialDetails.push({
-                ...material,
-                costPerItem: material.costPerItem
-            });
+            
+            if (material.unit === 'sheet' || material.unit === 'piece') {
+                totalWastePercentage += 5;
+            } else if (material.unit === 'roll') {
+                totalWastePercentage += 3;
+            } else {
+                totalWastePercentage += 2;
+            }
         });
         
-        const baseCost = totalMaterialCostPerItem + printingCost + laborCost;
+        const averageWaste = totalWastePercentage / materials.length;
+        const wasteFactor = 1 + (averageWaste / 100);
+        
+        const adjustedMaterialCost = totalMaterialCostPerItem * wasteFactor;
+        const baseCost = adjustedMaterialCost + printingCost + laborCost;
         
         const sellingPrice = baseCost * (1 + markupPercentage / 100);
-        const profit = sellingPrice - baseCost;
-        const profitPercentage = markupPercentage;
+        const roundedPrice = Math.ceil(sellingPrice / 5) * 5;
+        const profit = roundedPrice - baseCost;
+        const profitPercentage = ((profit / baseCost) * 100).toFixed(1);
         
-        this.state.currentCalculation = {
-            materials: materialDetails,
-            totalMaterialCostPerItem,
-            printingCost,
-            laborCost,
-            markupPercentage,
-            baseCost,
-            sellingPrice,
-            profit,
-            profitPercentage
-        };
-        
-        this.showPricePreview();
-        
-        if (showToast) {
-            this.showToast('Prices calculated successfully!', 'success');
-        }
+        this.showPricePreview(totalMaterialCostPerItem, printingCost, laborCost, baseCost, roundedPrice, profit, profitPercentage, averageWaste);
     }
 
-    showPricePreview() {
+    showPricePreview(materialCost, printingCost, laborCost, baseCost, sellingPrice, profit, profitPercentage, wastePercentage) {
         const previewSection = document.getElementById('previewSection');
         const pricePreview = document.getElementById('pricePreview');
         
-        if (!this.state.currentCalculation) return;
-        
-        const calc = this.state.currentCalculation;
         previewSection.classList.remove('d-none');
         
+        const wasteCost = materialCost * (wastePercentage / 100);
+        const totalMaterialWithWaste = materialCost + wasteCost;
+        
         pricePreview.innerHTML = `
-            <div class="col-md-6">
-                <div class="price-option" data-price="${calc.sellingPrice.toFixed(2)}">
-                    <div class="price-label fw-bold mb-2">Recommended Price</div>
-                    <div class="price">${this.state.currencySymbol}${calc.sellingPrice.toFixed(2)}</div>
-                    <div class="profit mb-3">
-                        <div>${calc.profitPercentage}% Profit Margin</div>
-                        <div>Profit: ${this.state.currencySymbol}${calc.profit.toFixed(2)} per item</div>
-                    </div>
-                    <button class="btn btn-sm btn-primary select-price">Select This Price</button>
-                </div>
-            </div>
-            <div class="col-md-6">
+            <div class="col-12">
                 <div class="card">
+                    <div class="card-header">
+                        <h6 class="mb-0">Pricing Analysis</h6>
+                    </div>
                     <div class="card-body">
-                        <h6 class="card-title mb-3">Cost Breakdown</h6>
-                        <div class="cost-breakdown">
-                            <div class="cost-item">
-                                <span>Material Cost:</span>
-                                <span>${this.state.currencySymbol}${calc.totalMaterialCostPerItem.toFixed(2)}</span>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <div class="cost-breakdown mb-4">
+                                    <h6 class="mb-3">Detailed Cost Breakdown</h6>
+                                    <div class="cost-item">
+                                        <span>Raw Material Cost:</span>
+                                        <span>₱${materialCost.toFixed(2)}</span>
+                                    </div>
+                                    <div class="cost-item">
+                                        <span>Material Waste (${wastePercentage.toFixed(1)}%):</span>
+                                        <span class="text-warning">+₱${wasteCost.toFixed(2)}</span>
+                                    </div>
+                                    <div class="cost-item">
+                                        <span>Adjusted Material Cost:</span>
+                                        <span class="fw-bold">₱${totalMaterialWithWaste.toFixed(2)}</span>
+                                    </div>
+                                    <div class="cost-item">
+                                        <span>Printing Cost:</span>
+                                        <span>₱${printingCost.toFixed(2)}</span>
+                                    </div>
+                                    <div class="cost-item">
+                                        <span>Labor Cost:</span>
+                                        <span>₱${laborCost.toFixed(2)}</span>
+                                    </div>
+                                    <div class="cost-item border-top pt-2">
+                                        <span>Total Production Cost:</span>
+                                        <span class="fw-bold">₱${baseCost.toFixed(2)}</span>
+                                    </div>
+                                    <div class="cost-item">
+                                        <span>Profit (${profitPercentage}%):</span>
+                                        <span class="text-success">+₱${profit.toFixed(2)}</span>
+                                    </div>
+                                </div>
                             </div>
-                            <div class="cost-item">
-                                <span>Printing Cost:</span>
-                                <span>${this.state.currencySymbol}${calc.printingCost.toFixed(2)}</span>
+                            <div class="col-md-6">
+                                <div class="price-summary text-center">
+                                    <h6 class="mb-3">Recommended Retail Price</h6>
+                                    <div class="display-4 text-success mb-3">₱${sellingPrice.toFixed(2)}</div>
+                                    <div class="profit-details">
+                                        <div class="d-flex justify-content-between mb-2">
+                                            <span>Your Cost:</span>
+                                            <span>₱${baseCost.toFixed(2)}</span>
+                                        </div>
+                                        <div class="d-flex justify-content-between mb-2">
+                                            <span>Your Profit:</span>
+                                            <span class="text-success fw-bold">₱${profit.toFixed(2)}</span>
+                                        </div>
+                                        <div class="d-flex justify-content-between mb-2">
+                                            <span>Profit Margin:</span>
+                                            <span class="text-success fw-bold">${profitPercentage}%</span>
+                                        </div>
+                                        <div class="d-flex justify-content-between">
+                                            <span>ROI:</span>
+                                            <span class="text-info fw-bold">${((profit / baseCost) * 100).toFixed(1)}%</span>
+                                        </div>
+                                    </div>
+                                </div>
                             </div>
-                            <div class="cost-item">
-                                <span>Labor Cost:</span>
-                                <span>${this.state.currencySymbol}${calc.laborCost.toFixed(2)}</span>
+                        </div>
+                        
+                        <div class="row mt-4">
+                            <div class="col-md-6">
+                                <div class="alert alert-warning">
+                                    <i class="bi bi-exclamation-triangle me-2"></i>
+                                    <strong>Waste Considered:</strong> ${wastePercentage.toFixed(1)}% material waste included
+                                </div>
                             </div>
-                            <div class="cost-item border-top pt-2">
-                                <span>Total Cost:</span>
-                                <span class="fw-bold">${this.state.currencySymbol}${calc.baseCost.toFixed(2)}</span>
-                            </div>
-                            <div class="cost-item">
-                                <span>Markup (${calc.markupPercentage}%):</span>
-                                <span class="text-success">+${this.state.currencySymbol}${calc.profit.toFixed(2)}</span>
-                            </div>
-                            <div class="cost-item border-top pt-2 fw-bold">
-                                <span>Selling Price:</span>
-                                <span class="text-success">${this.state.currencySymbol}${calc.sellingPrice.toFixed(2)}</span>
+                            <div class="col-md-6">
+                                <div class="alert alert-info">
+                                    <i class="bi bi-lightbulb me-2"></i>
+                                    <strong>Break-even:</strong> Need to sell ${Math.ceil(1000 / profit)} units for ₱1,000 profit
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -351,27 +345,7 @@ class PrintCalculator {
             </div>
         `;
         
-        document.querySelectorAll('.select-price').forEach(button => {
-            button.addEventListener('click', (e) => {
-                const priceOption = e.target.closest('.price-option');
-                const price = parseFloat(priceOption.getAttribute('data-price'));
-                
-                // Store selected price
-                this.state.selectedPrice = price;
-                
-                // Show save button
-                document.getElementById('saveProductBtn').classList.remove('d-none');
-                document.getElementById('calculateBtn').classList.add('d-none');
-                
-                // Visual feedback
-                document.querySelectorAll('.price-option').forEach(opt => {
-                    opt.classList.remove('selected');
-                });
-                priceOption.classList.add('selected');
-                
-                this.showToast('Price selected! Click "Save Product" to continue.', 'success');
-            });
-        });
+        this.updateSaveButton();
     }
 
     selectColor(color) {
@@ -382,44 +356,66 @@ class PrintCalculator {
         document.querySelector(`.color-option[data-color="${color}"]`).classList.add('active');
     }
 
-    saveProduct() {
-        if (!this.state.selectedPrice && !this.state.currentCalculation) {
-            this.showToast('Please calculate and select a price first', 'warning');
-            return;
-        }
+    updateSaveButton() {
+        const productName = document.getElementById('productName').value.trim();
+        const materials = this.getMaterialsData();
+        const saveBtn = document.getElementById('saveProductBtn');
         
+        if (productName && materials.length > 0) {
+            saveBtn.disabled = false;
+            saveBtn.classList.remove('btn-secondary');
+            saveBtn.classList.add('btn-primary');
+        } else {
+            saveBtn.disabled = true;
+            saveBtn.classList.remove('btn-primary');
+            saveBtn.classList.add('btn-secondary');
+        }
+    }
+
+    saveProduct() {
         const productId = document.getElementById('productId').value || Date.now().toString();
         const productName = document.getElementById('productName').value.trim();
         const materials = this.getMaterialsData();
         const printingCost = parseFloat(document.getElementById('printingCost').value) || 0;
         const laborCost = parseFloat(document.getElementById('laborCost').value) || 0;
-        const markupPercentage = parseFloat(document.getElementById('markupPercentage').value) || 30;
+        const markupPercentage = parseFloat(document.getElementById('markupPercentage').value) || 40;
         const category = document.getElementById('productCategory').value;
         const color = document.getElementById('productColor').value;
         
-        if (!productName || materials.length === 0) {
-            this.showToast('Please fill all required fields', 'warning');
+        if (!productName) {
+            this.showToast('Please enter a product name', 'warning');
+            document.getElementById('productName').focus();
             return;
         }
         
-        let baseCost, sellingPrice, profit, profitPercentage;
-        
-        if (this.state.currentCalculation) {
-            baseCost = this.state.currentCalculation.baseCost;
-            sellingPrice = this.state.selectedPrice || this.state.currentCalculation.sellingPrice;
-            profit = sellingPrice - baseCost;
-            profitPercentage = ((profit / baseCost) * 100).toFixed(1);
-        } else {
-            let totalMaterialCostPerItem = 0;
-            materials.forEach(material => {
-                totalMaterialCostPerItem += material.costPerItem;
-            });
-            
-            baseCost = totalMaterialCostPerItem + printingCost + laborCost;
-            sellingPrice = this.state.selectedPrice || (baseCost * (1 + markupPercentage / 100));
-            profit = sellingPrice - baseCost;
-            profitPercentage = ((profit / baseCost) * 100).toFixed(1);
+        if (materials.length === 0) {
+            this.showToast('Please add at least one material', 'warning');
+            return;
         }
+        
+        let totalMaterialCostPerItem = 0;
+        let totalWastePercentage = 0;
+        
+        materials.forEach(material => {
+            totalMaterialCostPerItem += material.costPerItem;
+            
+            if (material.unit === 'sheet' || material.unit === 'piece') {
+                totalWastePercentage += 5;
+            } else if (material.unit === 'roll') {
+                totalWastePercentage += 3;
+            } else {
+                totalWastePercentage += 2;
+            }
+        });
+        
+        const averageWaste = totalWastePercentage / materials.length;
+        const wasteFactor = 1 + (averageWaste / 100);
+        const adjustedMaterialCost = totalMaterialCostPerItem * wasteFactor;
+        const baseCost = adjustedMaterialCost + printingCost + laborCost;
+        const sellingPrice = baseCost * (1 + markupPercentage / 100);
+        const roundedPrice = Math.ceil(sellingPrice / 5) * 5;
+        const profit = roundedPrice - baseCost;
+        const profitPercentage = ((profit / baseCost) * 100).toFixed(1);
         
         const product = {
             id: productId,
@@ -430,11 +426,12 @@ class PrintCalculator {
             printingCost,
             laborCost,
             markupPercentage,
+            wastePercentage: averageWaste,
             baseCost,
-            sellingPrice,
+            sellingPrice: roundedPrice,
             profit,
             profitPercentage,
-            currency: this.state.currency,
+            currency: 'PHP',
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString()
         };
@@ -442,20 +439,18 @@ class PrintCalculator {
         const existingIndex = this.state.products.findIndex(p => p.id === productId);
         if (existingIndex >= 0) {
             this.state.products[existingIndex] = product;
+            this.showToast('Product updated successfully!', 'success');
         } else {
             this.state.products.unshift(product);
+            this.showToast('Product saved successfully!', 'success');
         }
         
         localStorage.setItem('printProducts', JSON.stringify(this.state.products));
         
-        // Close modal
         bootstrap.Modal.getInstance(document.getElementById('productModal')).hide();
         
-        this.state.selectedPrice = null;
-        this.state.currentCalculation = null;
         this.renderProducts();
         this.updateDashboard();
-        this.showToast('Product saved successfully!', 'success');
     }
 
     renderProducts() {
@@ -471,10 +466,9 @@ class PrintCalculator {
         emptyState.classList.add('d-none');
         
         container.innerHTML = this.state.products.map(product => {
-            const conversionRate = this.currencyData[product.currency].rate / this.currencyData[this.state.currency].rate;
-            const sellingPrice = product.sellingPrice * conversionRate;
-            const baseCost = product.baseCost * conversionRate;
-            const profit = product.profit * conversionRate;
+            const sellingPrice = product.sellingPrice;
+            const baseCost = product.baseCost;
+            const profit = product.profit;
             const profitPercentage = product.profitPercentage;
             
             return `
@@ -490,17 +484,17 @@ class PrintCalculator {
                             </div>
                             
                             <div class="product-price mb-2">
-                                ${this.state.currencySymbol}${sellingPrice.toFixed(2)}
+                                ₱${sellingPrice.toFixed(2)}
                             </div>
                             
                             <div class="product-meta mb-3">
                                 <div class="d-flex justify-content-between">
                                     <span>Cost:</span>
-                                    <span>${this.state.currencySymbol}${baseCost.toFixed(2)}</span>
+                                    <span>₱${baseCost.toFixed(2)}</span>
                                 </div>
                                 <div class="d-flex justify-content-between">
                                     <span>Profit:</span>
-                                    <span class="text-success">${this.state.currencySymbol}${profit.toFixed(2)}</span>
+                                    <span class="text-success">₱${profit.toFixed(2)}</span>
                                 </div>
                             </div>
                             
@@ -540,13 +534,14 @@ class PrintCalculator {
         
         this.state.selectedProduct = product;
         
-        const conversionRate = this.currencyData[product.currency].rate / this.currencyData[this.state.currency].rate;
-        const sellingPrice = product.sellingPrice * conversionRate;
-        const baseCost = product.baseCost * conversionRate;
-        const profit = product.profit * conversionRate;
-        const printingCost = product.printingCost * conversionRate;
-        const laborCost = product.laborCost * conversionRate;
+        const sellingPrice = product.sellingPrice;
+        const baseCost = product.baseCost;
+        const profit = product.profit;
+        const printingCost = product.printingCost;
+        const laborCost = product.laborCost;
         const materialCost = baseCost - printingCost - laborCost;
+        const wasteCost = materialCost * (product.wastePercentage / 100);
+        const rawMaterialCost = materialCost - wasteCost;
         
         const detailsHtml = `
             <div class="row">
@@ -564,7 +559,7 @@ class PrintCalculator {
                             <div class="col-md-4">
                                 <div class="card">
                                     <div class="card-body text-center">
-                                        <div class="display-6 text-success">${this.state.currencySymbol}${sellingPrice.toFixed(2)}</div>
+                                        <div class="display-6 text-success">₱${sellingPrice.toFixed(2)}</div>
                                         <small class="text-muted">Selling Price</small>
                                     </div>
                                 </div>
@@ -572,8 +567,8 @@ class PrintCalculator {
                             <div class="col-md-4">
                                 <div class="card">
                                     <div class="card-body text-center">
-                                        <div class="display-6">${this.state.currencySymbol}${baseCost.toFixed(2)}</div>
-                                        <small class="text-muted">Cost</small>
+                                        <div class="display-6">₱${baseCost.toFixed(2)}</div>
+                                        <small class="text-muted">Your Cost</small>
                                     </div>
                                 </div>
                             </div>
@@ -589,7 +584,7 @@ class PrintCalculator {
                         
                         <div class="card">
                             <div class="card-header">
-                                <h6 class="mb-0">Materials</h6>
+                                <h6 class="mb-0">Materials Used (${product.wastePercentage.toFixed(1)}% waste included)</h6>
                             </div>
                             <div class="card-body">
                                 <div class="table-responsive">
@@ -599,8 +594,8 @@ class PrintCalculator {
                                                 <th>Material</th>
                                                 <th>Unit</th>
                                                 <th>Cost</th>
-                                                <th>Items Produced</th>
-                                                <th>Cost per Item</th>
+                                                <th>Items Made</th>
+                                                <th>Cost/Item</th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -608,16 +603,24 @@ class PrintCalculator {
                                                 <tr>
                                                     <td>${material.name}</td>
                                                     <td><span class="badge bg-light text-dark">${material.unit}</span></td>
-                                                    <td>${this.state.currencySymbol}${(material.cost * conversionRate).toFixed(2)}</td>
+                                                    <td>₱${material.cost.toFixed(2)}</td>
                                                     <td>${material.itemsProduced}</td>
-                                                    <td class="text-success">${this.state.currencySymbol}${(material.costPerItem * conversionRate).toFixed(2)}</td>
+                                                    <td class="text-success">₱${material.costPerItem.toFixed(2)}</td>
                                                 </tr>
                                             `).join('')}
                                         </tbody>
                                         <tfoot>
                                             <tr class="table-light">
-                                                <td colspan="4" class="text-end"><strong>Total Material Cost per Item:</strong></td>
-                                                <td><strong>${this.state.currencySymbol}${materialCost.toFixed(2)}</strong></td>
+                                                <td colspan="4" class="text-end"><strong>Total Raw Material Cost:</strong></td>
+                                                <td><strong>₱${rawMaterialCost.toFixed(2)}</strong></td>
+                                            </tr>
+                                            <tr class="table-warning">
+                                                <td colspan="4" class="text-end"><strong>Material Waste (${product.wastePercentage.toFixed(1)}%):</strong></td>
+                                                <td><strong class="text-warning">+₱${wasteCost.toFixed(2)}</strong></td>
+                                            </tr>
+                                            <tr class="table-primary">
+                                                <td colspan="4" class="text-end"><strong>Total Adjusted Material Cost:</strong></td>
+                                                <td><strong>₱${materialCost.toFixed(2)}</strong></td>
                                             </tr>
                                         </tfoot>
                                     </table>
@@ -630,37 +633,41 @@ class PrintCalculator {
                 <div class="col-md-4">
                     <div class="card">
                         <div class="card-header">
-                            <h6 class="mb-0">Cost Breakdown</h6>
+                            <h6 class="mb-0">Cost Analysis</h6>
                         </div>
                         <div class="card-body">
                             <div class="cost-breakdown">
                                 <div class="cost-item">
-                                    <span>Materials:</span>
-                                    <span>${this.state.currencySymbol}${materialCost.toFixed(2)}</span>
+                                    <span>Raw Materials:</span>
+                                    <span>₱${rawMaterialCost.toFixed(2)}</span>
                                 </div>
                                 <div class="cost-item">
-                                    <span>Printing:</span>
-                                    <span>${this.state.currencySymbol}${printingCost.toFixed(2)}</span>
+                                    <span>Material Waste:</span>
+                                    <span class="text-warning">+₱${wasteCost.toFixed(2)}</span>
                                 </div>
                                 <div class="cost-item">
-                                    <span>Labor:</span>
-                                    <span>${this.state.currencySymbol}${laborCost.toFixed(2)}</span>
+                                    <span>Printing Cost:</span>
+                                    <span>₱${printingCost.toFixed(2)}</span>
+                                </div>
+                                <div class="cost-item">
+                                    <span>Labor Cost:</span>
+                                    <span>₱${laborCost.toFixed(2)}</span>
                                 </div>
                                 <div class="cost-item border-top pt-2">
-                                    <span>Total Cost:</span>
-                                    <span class="fw-bold">${this.state.currencySymbol}${baseCost.toFixed(2)}</span>
+                                    <span>Total Production Cost:</span>
+                                    <span class="fw-bold">₱${baseCost.toFixed(2)}</span>
                                 </div>
                                 <div class="cost-item">
-                                    <span>Profit:</span>
-                                    <span class="text-success fw-bold">${this.state.currencySymbol}${profit.toFixed(2)}</span>
+                                    <span>Your Profit:</span>
+                                    <span class="text-success fw-bold">₱${profit.toFixed(2)}</span>
                                 </div>
                                 <div class="cost-item">
                                     <span>Profit Margin:</span>
                                     <span class="text-success fw-bold">${product.profitPercentage}%</span>
                                 </div>
                                 <div class="cost-item border-top pt-2">
-                                    <span>Selling Price:</span>
-                                    <span class="fw-bold text-success">${this.state.currencySymbol}${sellingPrice.toFixed(2)}</span>
+                                    <span>Recommended Price:</span>
+                                    <span class="fw-bold text-success">₱${sellingPrice.toFixed(2)}</span>
                                 </div>
                             </div>
                         </div>
@@ -668,7 +675,7 @@ class PrintCalculator {
                     
                     <div class="card mt-3">
                         <div class="card-body">
-                            <h6 class="card-title mb-3">Production Info</h6>
+                            <h6 class="card-title mb-3">Production Insights</h6>
                             <div class="list-group list-group-flush">
                                 <div class="list-group-item d-flex justify-content-between">
                                     <span>Created:</span>
@@ -679,12 +686,16 @@ class PrintCalculator {
                                     <span>${new Date(product.updatedAt).toLocaleDateString()}</span>
                                 </div>
                                 <div class="list-group-item d-flex justify-content-between">
-                                    <span>Currency:</span>
-                                    <span>${product.currency}</span>
-                                </div>
-                                <div class="list-group-item d-flex justify-content-between">
                                     <span>Markup Applied:</span>
                                     <span>${product.markupPercentage}%</span>
+                                </div>
+                                <div class="list-group-item d-flex justify-content-between">
+                                    <span>Waste Considered:</span>
+                                    <span>${product.wastePercentage.toFixed(1)}%</span>
+                                </div>
+                                <div class="list-group-item d-flex justify-content-between">
+                                    <span>Break-even Units:</span>
+                                    <span>${Math.ceil(1000 / profit)} for ₱1,000 profit</span>
                                 </div>
                             </div>
                         </div>
@@ -695,9 +706,9 @@ class PrintCalculator {
             <div class="row mt-4">
                 <div class="col-12">
                     <div class="alert alert-info">
-                        <i class="bi bi-info-circle me-2"></i>
-                        <strong>Business Insight:</strong> To make ${this.state.currencySymbol}1000 profit, 
-                        you need to sell approximately <strong>${Math.ceil(1000 / profit)}</strong> units.
+                        <i class="bi bi-lightbulb me-2"></i>
+                        <strong>Pricing Strategy:</strong> This price is rounded to the nearest ₱5 increment for better market acceptance. 
+                        The calculation includes realistic material waste considerations based on industry standards.
                     </div>
                 </div>
             </div>
@@ -737,9 +748,14 @@ class PrintCalculator {
         const totalProducts = this.state.products.length;
         
         const totalValue = this.state.products.reduce((sum, product) => {
-            const conversionRate = this.currencyData[product.currency].rate / this.currencyData[this.state.currency].rate;
-            return sum + (product.sellingPrice * conversionRate);
+            return sum + product.sellingPrice;
         }, 0);
+        
+        const totalCost = this.state.products.reduce((sum, product) => {
+            return sum + product.baseCost;
+        }, 0);
+        
+        const totalProfit = totalValue - totalCost;
         
         const avgProfit = this.state.products.length > 0 
             ? (this.state.products.reduce((sum, product) => sum + parseFloat(product.profitPercentage), 0) / this.state.products.length).toFixed(1)
@@ -752,11 +768,9 @@ class PrintCalculator {
         }).length;
         
         document.getElementById('totalProducts').textContent = totalProducts;
-        document.getElementById('totalValue').textContent = `${this.state.currencySymbol}${totalValue.toFixed(0)}`;
+        document.getElementById('totalValue').textContent = `₱${totalValue.toFixed(0)}`;
         document.getElementById('avgProfit').textContent = `${avgProfit}%`;
         document.getElementById('recentCount').textContent = recentCount;
-        
-        document.getElementById('currencySelect').value = this.state.currency;
     }
 
     showToast(message, type = 'info') {
